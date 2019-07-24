@@ -5,4 +5,6 @@ Originally written by Tanya in ~2010, this routine evidently has the option to z
 
 Modified by JiM in Dec 2018 while animating 2018 Cape Cod Bay drifters.
 
+Modified by Jim in July 2019 to add the "pltsst.py" option with satellite SST background
+
 As of this time, may require our homegrown "basemap" module but those lines are not necessary
