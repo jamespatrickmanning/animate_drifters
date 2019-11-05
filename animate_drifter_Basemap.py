@@ -1,9 +1,17 @@
 """
 Purpose: To create drifter animation from .dat file containing drifter lat, lot data
-Author: Tanya Stoyanova
-Last Updated: 12 Dec 2018 by JiM
-Note: the final step using Linux "convert" might have to be done on a machine with that installed like NOVA
-Version using Basemap from mpl_toolkits
+Original Author: Tanya Stoyanova (Cape Cod Community College Computer Science student)
+Updated: 12 Dec 2018 by JiM where he:
+   - stored in https://github.com/jamespatrickmanning/animate_drifters
+   - added option for NCEP wind assuming user has downloaded the file needed
+   - added option to color tracks according to drifter 'type'
+   - added option to plot model vector fields using "uvmodel_function.uvmodel_plot" call assuming ctrl_uvmodel.csv is setup
+   - considering redoing how the data is read in using pandas
+Updated: 2 July 2019 by JiM to:
+   - add "getgbox" function defining typical geographic areas
+
+Note: Uses Linux "convert" so the final step might have to be done on a machine with that installed like NOVA. There are ways to do this in Python but that is documented in another file.
+Note: Uses Basemap from mpl_toolkits
 """
  
 from datetime import datetime, timedelta
@@ -17,21 +25,39 @@ import os
 import sys
 import netCDF4 # for wind access
 from math import sqrt
-sys.path.append("mygit/modules")
-import basemap as bm
+import uvmodel_function # needed to call "uvmodel_plot()"
+#sys.path.append("mygit/modules")
+#import basemap as bm # this is only needed when you might need more detail coastlines
 from operator import itemgetter
 
-#from utilities import points_between,lat2str,lon2str
+#### HARDCODES ########
 color_mode='type' # where type refers to drifter type (surf,drogue,etc) otherwise 'id'
-specified_box=[-70.7,-69.8,41.3,42.3]# hardcodes box
-lat_w,lon_w=42.0,-70.5 # base of wind vector
+area='BoF' # region to feed to "getgbox" function defining lat/lon box options include SNE, NorthShore, CCBAY, BoF
+include_model_vectors='no' # runs the uvmodel routine inside loop
+include_wind='no'
+include_moorings='yes'
+lat_w,lon_w=41.2,-71.6 # base of wind vector
 ZOOM_STEPS = 5   #Number of frames until it reaches zoomed in state
 dSIZE = 1.0  #marker size
 dCoords = .1   #degrees to increase visible map area / margin around the data 
-INPUT_FILENAME = '/net/pubweb_html/drifter/drift_audubon_2018_1.dat' 
+INPUT_FILENAME = '/net/pubweb_html/drifter/drift_ecohab_2019_3.dat' # you may need to download this to your machine (see nefsc.noaa.gov/drifter/drift_ecohab_2019_3.dat)
 PATH_ANIM = ''#'c:\\Users\\Tanya\\eMOLT\\eMOLT\\src\\animations\\'
 PATH_IMG = 'animations/frame'#'c:\\Users\\Tanya\\eMOLT\\eMOLT\\src\\images\\%03d.png'
 PATH_FFMPEG = ''#c:\\ffmpeg\\'
+
+def getgbox(area):
+  # gets geographic box based on area
+  if area=='SNE':
+    gbox=[-70.,-65.,38.,42.] # for SNE
+  elif area=='NorthShore':
+    gbox=[-71.,-70.,42.,43.] # for north shore
+  elif area=='CCBAY':
+    gbox=[-70.75,-69.8,41.5,42.23] # CCBAY
+  elif area=='BoF':
+    gbox=[-68.5,-65.5,44.,45.25] # Bay of Fundy
+  else:
+    gbox=[]
+  return gbox
 
 def get_wind_ncep(starttime,endtime,lat,lon):
         #function get a time series of u & v wind m/s from pre-downloaded ncep file
@@ -39,6 +65,7 @@ def get_wind_ncep(starttime,endtime,lat,lon):
         url_input=""
         url_uwind=url_input+'uwnd.sig995.'+str(year)+'.nc'## where I downloaded these from ftp://ftp.cdc.noaa.gov/Datasets/ncep.reanalysis/surface/
         url_vwind=url_input+'vwnd.sig995.'+str(year)+'.nc'
+        print url_vwind
         ncv=netCDF4.Dataset(url_vwind)
         ncu=netCDF4.Dataset(url_uwind)
         
@@ -142,11 +169,11 @@ def makeMap(llLon, urLon, llLat, urLat):
     #set up the map in a Equidistant Cylindrical projection
     m = Basemap(projection='cyl', llcrnrlat=llLat, urcrnrlat=urLat, \
                     llcrnrlon=llLon, urcrnrlon=urLon, resolution='h')
-    #bm.basemap_region('sne')
     return m
 
 ######## MAIN PROGRAM ######################### 
 
+gbox=getgbox(area)# gets geographic box based on hardcoded "area='BoF', for example
 verts, vert, rows = [], [], []
 #read the data file
 csv.register_dialect('spacedelimitedfixedwidth', delimiter=' ', skipinitialspace=True, quoting=csv.QUOTE_NONE)    
@@ -255,8 +282,9 @@ if myIds:
 if zID:
     zLat, zLon = getLatLon(zID)
     xmin, xmax, ymin, ymax = selectMapCoords(zLon, zLat)
-   
-[dtimes,u,v]=get_wind_ncep(start_time,end_time,lat_w,lon_w)
+
+if include_wind=='yes':   
+  [dtimes,u,v]=get_wind_ncep(start_time,end_time,lat_w,lon_w)
 
 myColors = dict([(i, colors[uniqueIds.index(i)]) for i in uniqueIds])
 #draw drifter track
@@ -269,10 +297,10 @@ zoom_verts = []
 
 fig = plt.figure(1)
 ax = fig.add_subplot(111)
-if len(specified_box)==0:
+if len(gbox)==0:
   llLon, urLon, llLat, urLat = selectMapCoords(lon, lat)
 else:
-  llLon, urLon, llLat, urLat=specified_box
+  llLon, urLon, llLat, urLat=gbox
 m = makeMap(llLon, urLon, llLat, urLat)
 m.drawcoastlines()
 m.fillcontinents(color='gray')
@@ -282,12 +310,19 @@ m.drawmeridians(np.arange(int(llLon), int(urLon)+.1), labels=[0, 0, 0, 1])
 #m.drawparallels(np.arange(int(llLat), int(urLat)+1,round((urLat-llLat)/3,1)), labels=[1, 0, 0, 0])
 #m.drawmeridians(np.arange(int(llLon), int(urLon)+1,round((urLon-llLon)/3,2)),  labels=[0, 0, 0, 2])
 count = ZOOM_STEPS
-ax.quiver(lon_w,lat_w-0.3,10.0,0.0,color='red',scale=50.,zorder=2)
-ax.text(lon_w-.1,lat_w-0.35,'10 m/s (~20 knots)',color='red',zorder=2)
+if include_wind=='yes':
+  ax.quiver(lon_w,lat_w-0.3,10.0,0.0,color='red',scale=50.,zorder=2)
+  ax.text(lon_w-.1,lat_w-0.35,'10 m/s (~20 knots)',color='red',zorder=2)
 while st_time < end_time - tailLength:
-    min_list= [abs(x-st_time) for x in dtimes] # find the nearest wind time to this time
-    idex=min(enumerate(min_list), key=itemgetter(1))[0] # get the index of this case
-    wind_arrow=ax.quiver(lon_w,lat_w,u[idex],v[idex],scale=50.0,color='red',zorder=2) # plot an arrow
+    if include_wind=='yes':
+      min_list= [abs(x-st_time) for x in dtimes] # find the nearest wind time to this time
+      idex=min(enumerate(min_list), key=itemgetter(1))[0] # get the index of this case
+      wind_arrow=ax.quiver(lon_w,lat_w,u[idex],v[idex],scale=50.0,color='red',zorder=2) # plot an arrow
+    if include_moorings=='yes':
+      plt.plot(-66.4856,44.7033,'*',markersize=20,color='k')
+      plt.plot(-66.9450,44.3820,'*',markersize=20,color='k')
+      plt.plot(-67.2950,44.5680,'*',markersize=20,color='k')
+      plt.plot(-68.1448,44.1190,'*',markersize=20,color='k')
     print str(st_time)
     del sub_verts[:]
     del sub_ids[:]
@@ -322,23 +357,24 @@ while st_time < end_time - tailLength:
     #plt.xlabel('Longitude W', labelpad=20)
     #plt.ylabel('Latitude N', labelpad=35)
     plt.gca().set_autoscale_on(False)
-    plt.tight_layout()
+    #plt.tight_layout()
     if sub_verts:          
         sub_verts.sort(key=lambda x: x[0])
         j = 0
         #print sub_ids
         for sub_id in sub_ids:
-            bm.basemap_region('sne')
+            #bm.basemap_region('sne')
             sub_lon = [float(sub_vert[7]) for sub_vert in sub_verts if sub_vert[0] == sub_ids[j]]
             sub_lat = [float(sub_vert[8]) for sub_vert in sub_verts if sub_vert[0] == sub_ids[j]]
+            dep     = [float(sub_vert[9]) for sub_vert in sub_verts if sub_vert[0] == sub_ids[j]]
             sizes = [((k + 1) * dSIZE) for k in range (len(sub_lon))]
             lwid=[((k + 1) * dSIZE) for k in range (len(sub_lon))]
             if color_mode=='type': # color by drifter type
-              if sub_verts[0][9]=='-1.0': # standard surface drifter
-                  col='g'
-              elif subverts[0][9]=='-0.3':# wooden turtle
+              if dep[0]==-1.0: # standard surface drifter
+                  col='r'
+              elif dep[0]==-0.3:# wooden turtle
                   col='b'
-              elif subverts[0][9]=='-0.05':# lost drogue
+              elif dep[0]==-0.05:# lost drogue
                   col='y'
               else:
                   col='c' # drogue
@@ -381,9 +417,11 @@ while st_time < end_time - tailLength:
             ax.set_xlim([(x1 + float((llLon - xmin) / 20)), (x2 - float((urLon - xmax) / 20))])
             ax.set_ylim([(y1 + float((llLat - ymin) / 20)), (y2 + float((urLat - ymax) / 20))])
             count += 1
+    if include_model_vectors=='yes':
+        Q=uvmodel_function.uvmodel_plot(ax,st_time)
     #save plot
     if plotMade == True:
-        filename = PATH_IMG +str('%03d' % i) + '.png'
+        filename = PATH_IMG +str('%05d' % i) + '.png'
         i = i + 1
         plt.show()
         plt.savefig(filename, dpi=100)
@@ -391,7 +429,10 @@ while st_time < end_time - tailLength:
         plotMade = False
         #kk=get(ax.quiver)
         #del kk # deletes quiver
-        wind_arrow.set_visible(False)
+        if include_wind=='yes':
+          wind_arrow.set_visible(False) # removes wind arrow
+        if include_model_vectors=='yes':
+          Q.set_visible(False) # removes model vectors
         del ax.lines[:]
         for r in res:
             r.remove()
