@@ -1,5 +1,9 @@
 # animate_drifters
-visualize observed drifter tracks via animation using Linux "convert" utility to generate a "gif" file
+
+NOTE: During the Summer of 2020,  I decided I should probably abandon this old Python 2.7 code in favor of interactive Python with time sliders.
+It might still work on my office desktops but too difficult to maintain otherwise.
+
+visualizes observed drifter tracks via animation using Linux "convert" utility to generate a "gif" file
 
 Originally written by Tanya in ~2010, this routine evidently has the option to zoom-in on specified drifters.
 
